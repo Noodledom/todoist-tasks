@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DecSync Calendar</title>
+  <style>
+    :root {
+      --bg: var(--vscode-editor-background, #1e1e1e);
+      --fg: var(--vscode-editor-foreground, #ccc);
+      --border: var(--vscode-panel-border, #444);
+      --accent: var(--vscode-focusBorder, #0078d4);
+      --today-bg: var(--vscode-editor-selectionBackground, #264f78);
+      --item-bg: var(--vscode-button-background, #0e639c);
+      --item-fg: var(--vscode-button-foreground, #fff);
+      --header-bg: var(--vscode-sideBarSectionHeader-background, #252526);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--fg); font-family: var(--vscode-font-family, sans-serif); font-size: 13px; }
+
+    /* Toolbar */
+    #toolbar {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 12px; background: var(--header-bg);
+      border-bottom: 1px solid var(--border);
+    }
+    #toolbar button {
+      background: transparent; color: var(--fg); border: 1px solid var(--border);
+      padding: 3px 10px; cursor: pointer; border-radius: 3px;
+    }
+    #toolbar button:hover { background: var(--accent); color: #fff; }
+    #toolbar button.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+    #title { flex: 1; text-align: center; font-weight: bold; font-size: 14px; }
+
+    /* Calendar grid */
+    #calendar { padding: 8px; }
+
+    .grid-header {
+      display: grid; gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+      margin-bottom: 1px;
+    }
+    .grid-header .day-name {
+      background: var(--header-bg); padding: 4px 6px;
+      text-align: center; font-weight: bold; font-size: 11px; text-transform: uppercase;
+    }
+    .grid-body { display: grid; gap: 1px; background: var(--border); border: 1px solid var(--border); }
+    .day-cell {
+      background: var(--bg); padding: 4px 6px; min-height: 80px; cursor: pointer;
+      position: relative;
+    }
+    .day-cell:hover { background: var(--header-bg); }
+    .day-cell.today { background: var(--today-bg); }
+    .day-cell.other-month { opacity: 0.4; }
+    .day-num { font-size: 11px; font-weight: bold; margin-bottom: 4px; }
+
+    /* Day / Week time grid */
+    .time-grid { display: flex; }
+    .time-labels { width: 48px; flex-shrink: 0; }
+    .time-label { height: 40px; font-size: 10px; color: #888; text-align: right; padding-right: 4px; }
+    .day-columns { flex: 1; display: flex; }
+    .day-col { flex: 1; border-left: 1px solid var(--border); position: relative; }
+    .day-col-header { padding: 4px 6px; text-align: center; font-weight: bold; font-size: 12px; background: var(--header-bg); border-bottom: 1px solid var(--border); }
+    .day-col-header.today { background: var(--today-bg); }
+    .hour-slot { height: 40px; border-bottom: 1px solid var(--border); position: relative; }
+
+    /* Items */
+    .cal-item {
+      display: block; font-size: 11px; padding: 1px 4px; margin: 1px 0;
+      background: var(--item-bg); color: var(--item-fg);
+      border-radius: 2px; cursor: pointer; overflow: hidden;
+      white-space: nowrap; text-overflow: ellipsis;
+    }
+    .cal-item.task { background: #6a4f8c; }
+    .cal-item:hover { opacity: 0.85; }
+
+    .timed-item {
+      position: absolute; left: 2px; right: 2px;
+      font-size: 11px; padding: 2px 4px;
+      background: var(--item-bg); color: var(--item-fg);
+      border-radius: 2px; cursor: pointer; overflow: hidden;
+      white-space: nowrap; text-overflow: ellipsis; z-index: 1;
+    }
+  </style>
+</head>
+<body>
+
+<div id="toolbar">
+  <button onclick="navigate(-1)">&#8592;</button>
+  <span id="title">Loading…</span>
+  <button onclick="navigate(1)">&#8594;</button>
+  <button onclick="goToday()">Today</button>
+  <button id="btn-day"   onclick="setView('day')">Day</button>
+  <button id="btn-week"  onclick="setView('week')" class="active">Week</button>
+  <button id="btn-month" onclick="setView('month')">Month</button>
+</div>
+
+<div id="calendar"></div>
+
+<script>
+  // -------------------------------------------------------------------------
+  // State
+  // -------------------------------------------------------------------------
+  const vscode = acquireVsCodeApi();
+  let state = { view: 'week', now: new Date(), anchor: new Date(), events: [], tasks: [], collections: [] };
+
+  // -------------------------------------------------------------------------
+  // VS Code ↔ webview messaging
+  // -------------------------------------------------------------------------
+  window.addEventListener('message', e => {
+    const msg = e.data;
+    if (msg.command === 'load') {
+      state.view   = msg.view;
+      state.now    = new Date(msg.now);
+      state.anchor = new Date(msg.now);
+      state.events = msg.events;
+      state.tasks  = msg.tasks;
+      state.collections = msg.collections;
+      setActiveViewBtn(state.view);
+      render();
+    }
+  });
+
+  function setView(v) {
+    state.view = v;
+    setActiveViewBtn(v);
+    vscode.postMessage({ command: 'setView', view: v });
+    render();
+  }
+
+  function setActiveViewBtn(v) {
+    ['day','week','month'].forEach(x => {
+      document.getElementById('btn-' + x).classList.toggle('active', x === v);
+    });
+  }
+
+  function navigate(dir) {
+    const a = state.anchor;
+    if (state.view === 'day')   { a.setDate(a.getDate() + dir); }
+    if (state.view === 'week')  { a.setDate(a.getDate() + dir * 7); }
+    if (state.view === 'month') { a.setMonth(a.getMonth() + dir); }
+    render();
+  }
+
+  function goToday() {
+    state.anchor = new Date(state.now);
+    render();
+  }
+
+  // -------------------------------------------------------------------------
+  // Render dispatcher
+  // -------------------------------------------------------------------------
+  function render() {
+    const cal = document.getElementById('calendar');
+    if (state.view === 'month') { cal.innerHTML = renderMonth(); }
+    if (state.view === 'week')  { cal.innerHTML = renderWeek(7); }
+    if (state.view === 'day')   { cal.innerHTML = renderWeek(1); }
+    attachItemHandlers();
+  }
+
+  // -------------------------------------------------------------------------
+  // Month view
+  // -------------------------------------------------------------------------
+  function renderMonth() {
+    const a = state.anchor;
+    const year = a.getFullYear(), month = a.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const startOffset = firstDay.getDay(); // 0=Sun
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+    document.getElementById('title').textContent =
+      firstDay.toLocaleString('default', { month: 'long', year: 'numeric' });
+
+    const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    let html = `<div class="grid-header" style="grid-template-columns:repeat(7,1fr)">`;
+    days.forEach(d => html += `<div class="day-name">${d}</div>`);
+    html += `</div><div class="grid-body" style="grid-template-columns:repeat(7,1fr)">`;
+
+    const totalCells = Math.ceil((startOffset + daysInMonth) / 7) * 7;
+    for (let i = 0; i < totalCells; i++) {
+      const dayNum = i - startOffset + 1;
+      const isOther = dayNum < 1 || dayNum > daysInMonth;
+      const date = new Date(year, month, dayNum);
+      const dateStr = toDateStr(date);
+      const isToday = dateStr === toDateStr(state.now);
+      html += `<div class="day-cell${isOther ? ' other-month' : ''}${isToday ? ' today' : ''}"
+        data-date="${dateStr}">
+        <div class="day-num">${isOther ? '' : dayNum}</div>
+        ${itemsForDate(dateStr)}
+      </div>`;
+    }
+    html += '</div>';
+    return html;
+  }
+
+  // -------------------------------------------------------------------------
+  // Week / Day view
+  // -------------------------------------------------------------------------
+  function renderWeek(numDays) {
+    const a = new Date(state.anchor);
+    if (numDays === 7) {
+      // start on Sunday
+      a.setDate(a.getDate() - a.getDay());
+    }
+
+    const dates = [];
+    for (let i = 0; i < numDays; i++) {
+      const d = new Date(a);
+      d.setDate(a.getDate() + i);
+      dates.push(d);
+    }
+
+    if (numDays === 1) {
+      document.getElementById('title').textContent =
+        a.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+    } else {
+      document.getElementById('title').textContent =
+        `${dates[0].toLocaleDateString(undefined,{month:'short',day:'numeric'})} – ${dates[6].toLocaleDateString(undefined,{month:'short',day:'numeric',year:'numeric'})}`;
+    }
+
+    let html = `<div class="time-grid">
+      <div class="time-labels">
+        <div style="height:36px"></div>`;
+    for (let h = 0; h < 24; h++) {
+      html += `<div class="time-label">${h === 0 ? '' : h + ':00'}</div>`;
+    }
+    html += `</div><div class="day-columns">`;
+
+    dates.forEach(date => {
+      const dateStr = toDateStr(date);
+      const isToday = dateStr === toDateStr(state.now);
+      const label = date.toLocaleDateString(undefined, { weekday: 'short', month: 'numeric', day: 'numeric' });
+      html += `<div class="day-col">
+        <div class="day-col-header${isToday ? ' today' : ''}">${label}</div>`;
+
+      // All-day / task row
+      const allDayItems = allDayForDate(dateStr);
+      if (allDayItems) { html += `<div style="padding:2px 4px;border-bottom:1px solid var(--border)">${allDayItems}</div>`; }
+
+      // Timed slots
+      html += `<div style="position:relative">`;
+      for (let h = 0; h < 24; h++) {
+        html += `<div class="hour-slot" data-date="${dateStr}" data-hour="${h}"></div>`;
+      }
+      // Overlay timed events
+      timedForDate(dateStr).forEach(item => { html += item; });
+      html += `</div></div>`;
+    });
+
+    html += `</div></div>`;
+    return html;
+  }
+
+  // -------------------------------------------------------------------------
+  // Item helpers
+  // -------------------------------------------------------------------------
+  function itemsForDate(dateStr) {
+    let html = '';
+    state.events
+      .filter(e => toDateStr(new Date(e.startDate)) === dateStr)
+      .forEach(e => { html += `<span class="cal-item" data-uid="${e.uid}" data-kind="event">${e.title}</span>`; });
+    state.tasks
+      .filter(t => t.dueDate && toDateStr(new Date(t.dueDate)) === dateStr)
+      .forEach(t => { html += `<span class="cal-item task" data-uid="${t.uid}" data-kind="task">✓ ${t.title}</span>`; });
+    return html;
+  }
+
+  function allDayForDate(dateStr) {
+    let html = '';
+    state.events
+      .filter(e => e.allDay && toDateStr(new Date(e.startDate)) === dateStr)
+      .forEach(e => { html += `<span class="cal-item" data-uid="${e.uid}" data-kind="event">${e.title}</span>`; });
+    state.tasks
+      .filter(t => t.dueDate && toDateStr(new Date(t.dueDate)) === dateStr)
+      .forEach(t => { html += `<span class="cal-item task" data-uid="${t.uid}" data-kind="task">✓ ${t.title}</span>`; });
+    return html;
+  }
+
+  function timedForDate(dateStr) {
+    return state.events
+      .filter(e => !e.allDay && toDateStr(new Date(e.startDate)) === dateStr)
+      .map(e => {
+        const start = new Date(e.startDate);
+        const end   = new Date(e.endDate);
+        const top  = (start.getHours() + start.getMinutes() / 60) * 40;
+        const height = Math.max(20, ((end - start) / 3600000) * 40);
+        return `<div class="timed-item" style="top:${top}px;height:${height}px"
+          data-uid="${e.uid}" data-kind="event">${e.title}</div>`;
+      });
+  }
+
+  function attachItemHandlers() {
+    document.querySelectorAll('[data-uid]').forEach(el => {
+      el.addEventListener('click', ev => {
+        ev.stopPropagation();
+        const uid  = el.getAttribute('data-uid');
+        const kind = el.getAttribute('data-kind');
+        vscode.postMessage({ command: kind === 'task' ? 'editTask' : 'editEvent', uid });
+      });
+    });
+    document.querySelectorAll('[data-date]').forEach(el => {
+      if (el.classList.contains('day-cell') || el.classList.contains('hour-slot')) {
+        el.addEventListener('click', () => {
+          const date = el.getAttribute('data-date');
+          vscode.postMessage({ command: 'createEvent', date });
+        });
+      }
+    });
+  }
+
+  function toDateStr(d) {
+    return d.toISOString().slice(0, 10);
+  }
+</script>
+</body>
+</html>

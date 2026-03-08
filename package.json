@@ -1,0 +1,401 @@
+{
+  "name": "todoist-tasks",
+  "displayName": "Todoist Tasks",
+  "description": "Manage Todoist tasks and projects directly from VS Code.",
+  "version": "0.1.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/todoist-tasks"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "todoistTasks.setApiToken",
+        "title": "Todoist: Set API Token"
+      },
+      {
+        "command": "todoistTasks.openCalendar",
+        "title": "Todoist: Open Calendar View"
+      },
+      {
+        "command": "todoistTasks.createTask",
+        "title": "Todoist: New Task",
+        "icon": "$(add)"
+      },
+      {
+        "command": "todoistTasks.createProject",
+        "title": "Todoist: New Project",
+        "icon": "$(new-folder)"
+      },
+      {
+        "command": "todoistTasks.deleteProject",
+        "title": "Todoist: Delete Project",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "todoistTasks.renameProject",
+        "title": "Todoist: Rename Project",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "todoistTasks.refresh",
+        "title": "Todoist: Refresh",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "todoistTasks.clearFilters",
+        "title": "Todoist: Clear Filters",
+        "icon": "$(clear-all)"
+      },
+      {
+        "command": "todoistTasks.sortTasks",
+        "title": "Todoist: Sort Tasks",
+        "icon": "$(sort-precedence)"
+      },
+      {
+        "command": "todoistTasks.filterTasks",
+        "title": "Todoist: Filter Tasks",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "todoistTasks.filterByTag",
+        "title": "Todoist: Filter by Label",
+        "icon": "$(tag)"
+      },
+      {
+        "command": "todoistTasks.editTask",
+        "title": "Todoist: Edit Task",
+        "icon": "$(edit)"
+      },
+      {
+        "command": "todoistTasks.toggleComplete",
+        "title": "Todoist: Toggle Complete",
+        "icon": "$(check)"
+      },
+      {
+        "command": "todoistTasks.completeTask",
+        "title": "Todoist: Complete Task",
+        "icon": "$(pass-filled)"
+      },
+      {
+        "command": "todoistTasks.reopenTask",
+        "title": "Todoist: Reopen Task",
+        "icon": "$(debug-restart)"
+      },
+      {
+        "command": "todoistTasks.addComment",
+        "title": "Todoist: Add Comment",
+        "icon": "$(comment)"
+      },
+      {
+        "command": "todoistTasks.deleteTask",
+        "title": "Todoist: Delete Task",
+        "icon": "$(trash)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "todoistTasksContainer",
+          "title": "Todoist Tasks",
+          "icon": "$(tasklist)"
+        }
+      ]
+    },
+    "views": {
+      "todoistTasksContainer": [
+        {
+          "id": "todoistTasksTree",
+          "name": "Tasks"
+        }
+      ]
+    },
+    "menus": {
+      "view/title": [
+        {
+          "command": "todoistTasks.refresh",
+          "when": "view == todoistTasksTree",
+          "group": "navigation"
+        },
+        {
+          "command": "todoistTasks.createProject",
+          "when": "view == todoistTasksTree",
+          "group": "navigation"
+        },
+        {
+          "command": "todoistTasks.sortTasks",
+          "when": "view == todoistTasksTree",
+          "group": "navigation"
+        },
+        {
+          "command": "todoistTasks.filterByTag",
+          "when": "view == todoistTasksTree",
+          "group": "navigation"
+        },
+        {
+          "command": "todoistTasks.filterTasks",
+          "when": "view == todoistTasksTree",
+          "group": "navigation"
+        },
+        {
+          "command": "todoistTasks.clearFilters",
+          "when": "view == todoistTasksTree",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "todoistTasks.createTask",
+          "when": "view == todoistTasksTree && viewItem == collection",
+          "group": "inline@1"
+        },
+        {
+          "command": "todoistTasks.toggleComplete",
+          "when": "view == todoistTasksTree && viewItem == task",
+          "group": "inline@1"
+        },
+        {
+          "command": "todoistTasks.toggleComplete",
+          "when": "view == todoistTasksTree && viewItem == completedTask",
+          "group": "inline@1"
+        },
+        {
+          "command": "todoistTasks.addComment",
+          "when": "view == todoistTasksTree && (viewItem == task || viewItem == completedTask)",
+          "group": "inline@2"
+        },
+        {
+          "command": "todoistTasks.renameProject",
+          "when": "view == todoistTasksTree && viewItem == collection",
+          "group": "1_collection@2"
+        },
+        {
+          "command": "todoistTasks.deleteProject",
+          "when": "view == todoistTasksTree && viewItem == collection",
+          "group": "2_danger@1"
+        },
+        {
+          "command": "todoistTasks.createTask",
+          "when": "view == todoistTasksTree && viewItem == collection",
+          "group": "1_collection@1"
+        },
+        {
+          "command": "todoistTasks.editTask",
+          "when": "view == todoistTasksTree && (viewItem == task || viewItem == completedTask)",
+          "group": "1_task@1"
+        },
+        {
+          "command": "todoistTasks.toggleComplete",
+          "when": "view == todoistTasksTree && viewItem == task",
+          "group": "1_task@2"
+        },
+        {
+          "command": "todoistTasks.toggleComplete",
+          "when": "view == todoistTasksTree && viewItem == completedTask",
+          "group": "1_task@2"
+        },
+        {
+          "command": "todoistTasks.addComment",
+          "when": "view == todoistTasksTree && (viewItem == task || viewItem == completedTask)",
+          "group": "1_task@3"
+        },
+        {
+          "command": "todoistTasks.createTask",
+          "when": "view == todoistTasksTree && viewItem == task",
+          "group": "1_task@4"
+        },
+        {
+          "command": "todoistTasks.deleteTask",
+          "when": "view == todoistTasksTree && (viewItem == task || viewItem == completedTask)",
+          "group": "2_danger@1"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Todoist Tasks",
+      "properties": {
+        "todoist.defaultView": {
+          "type": "string",
+          "enum": [
+            "week",
+            "day",
+            "month"
+          ],
+          "default": "week",
+          "description": "Default calendar view when opening the calendar panel."
+        },
+        "todoist.taskSortBy": {
+          "type": "string",
+          "enum": [
+            "dueDate",
+            "priority",
+            "title",
+            "created"
+          ],
+          "default": "dueDate",
+          "description": "Default sort field for the task tree."
+        },
+        "todoist.taskSortOrder": {
+          "type": "string",
+          "enum": [
+            "asc",
+            "desc"
+          ],
+          "default": "asc",
+          "description": "Default sort order for the task tree."
+        },
+        "todoist.pollIntervalSeconds": {
+          "type": "number",
+          "default": 60,
+          "minimum": 10,
+          "description": "How often (in seconds) to poll the Todoist API for changes."
+        }
+      }
+    },
+    "languageModelTools": [
+      {
+        "name": "todoist_list_tasks",
+        "displayName": "List Todoist Tasks",
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "todoistListTasks",
+        "icon": "$(tasklist)",
+        "modelDescription": "Lists Todoist tasks. Supports optional filters: project name (partial match), priority (none/low/medium/high), label name, due_before date (YYYY-MM-DD), include_completed (boolean), and a result limit. Returns task IDs needed for update/complete/delete tools.",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "project":           { "type": "string",  "description": "Filter by project name (partial, case-insensitive)" },
+            "priority":          { "type": "string",  "enum": ["none","low","medium","high"], "description": "Filter by priority" },
+            "label":             { "type": "string",  "description": "Filter by label name" },
+            "due_before":        { "type": "string",  "description": "Only tasks due on or before this date (YYYY-MM-DD)" },
+            "include_completed": { "type": "boolean", "description": "Include completed tasks (default false)" },
+            "limit":             { "type": "number",  "description": "Max results to return (default 50)" }
+          }
+        }
+      },
+      {
+        "name": "todoist_create_task",
+        "displayName": "Create Todoist Task",
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "todoistCreateTask",
+        "icon": "$(add)",
+        "modelDescription": "Creates a new task in Todoist. Requires a title. Optionally set project (partial name match), due_date (YYYY-MM-DD), priority (none/low/medium/high), comma-separated labels, and description.",
+        "inputSchema": {
+          "type": "object",
+          "required": ["title"],
+          "properties": {
+            "title":       { "type": "string", "description": "Task title (required)" },
+            "project":     { "type": "string", "description": "Project name (partial match). Uses first project if omitted." },
+            "due_date":    { "type": "string", "description": "Due date as YYYY-MM-DD" },
+            "priority":    { "type": "string", "enum": ["none","low","medium","high"], "description": "Task priority" },
+            "labels":      { "type": "string", "description": "Comma-separated label names" },
+            "description": { "type": "string", "description": "Optional task description" }
+          }
+        }
+      },
+      {
+        "name": "todoist_update_task",
+        "displayName": "Update Todoist Task",
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "todoistUpdateTask",
+        "icon": "$(edit)",
+        "modelDescription": "Updates fields on an existing Todoist task. Requires the task_id from todoist_list_tasks. All other fields are optional — only provided fields are changed. Pass due_date as empty string to clear the due date. Pass labels as empty string to clear labels.",
+        "inputSchema": {
+          "type": "object",
+          "required": ["task_id"],
+          "properties": {
+            "task_id":     { "type": "string", "description": "Task ID from todoist_list_tasks" },
+            "title":       { "type": "string", "description": "New title" },
+            "due_date":    { "type": "string", "description": "New due date (YYYY-MM-DD), or empty string to clear" },
+            "priority":    { "type": "string", "enum": ["none","low","medium","high"], "description": "New priority" },
+            "labels":      { "type": "string", "description": "Comma-separated labels (replaces existing). Empty string to clear." },
+            "description": { "type": "string", "description": "New description" }
+          }
+        }
+      },
+      {
+        "name": "todoist_complete_task",
+        "displayName": "Complete Todoist Task",
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "todoistCompleteTask",
+        "icon": "$(pass-filled)",
+        "modelDescription": "Marks a Todoist task as complete. Requires the task_id from todoist_list_tasks. Optionally also completes all subtasks.",
+        "inputSchema": {
+          "type": "object",
+          "required": ["task_id"],
+          "properties": {
+            "task_id":          { "type": "string",  "description": "Task ID from todoist_list_tasks" },
+            "include_subtasks": { "type": "boolean", "description": "Also complete all subtasks (default false)" }
+          }
+        }
+      },
+      {
+        "name": "todoist_delete_task",
+        "displayName": "Delete Todoist Task",
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "todoistDeleteTask",
+        "icon": "$(trash)",
+        "modelDescription": "Permanently deletes a Todoist task. Requires the task_id from todoist_list_tasks. This action cannot be undone — always confirm with the user before calling this.",
+        "inputSchema": {
+          "type": "object",
+          "required": ["task_id"],
+          "properties": {
+            "task_id": { "type": "string", "description": "Task ID from todoist_list_tasks" }
+          }
+        }
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "todoistTasks.toggleComplete",
+        "key": "ctrl+shift+space",
+        "mac": "cmd+shift+space",
+        "when": "focusedView == todoistTasksTree"
+      },
+      {
+        "command": "todoistTasks.editTask",
+        "key": "ctrl+enter",
+        "mac": "cmd+enter",
+        "when": "focusedView == todoistTasksTree"
+      },
+      {
+        "command": "todoistTasks.addComment",
+        "key": "ctrl+shift+c",
+        "mac": "cmd+shift+c",
+        "when": "focusedView == todoistTasksTree"
+      },
+      {
+        "command": "todoistTasks.filterByTag",
+        "key": "ctrl+shift+t",
+        "mac": "cmd+shift+t",
+        "when": "focusedView == todoistTasksTree"
+      }
+    ]
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "pretest": "npm run compile",
+    "test": "node ./out/test/runTest.js",
+    "unit": "npm run compile && mocha --timeout 5000 'out/test/unit/**/*.test.js' --recursive"
+  },
+  "devDependencies": {
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.90.0",
+    "@vscode/test-electron": "^2.3.0",
+    "mocha": "^11.7.5",
+    "typescript": "^5.0.0",
+    "vsce": "^2.15.0"
+  },
+  "dependencies": {}
+}
