@@ -36,6 +36,7 @@ export interface TaskFilter {
     tags?: string[];
     priority?: Priority;
     showCompleted?: boolean;
+    searchQuery?: string;
 }
 
 export interface TaskSort {

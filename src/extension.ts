@@ -77,6 +77,22 @@ export function activate(context: vscode.ExtensionContext): void {
             treeProvider.clearFilters();
         }),
 
+        // ---- Search Tasks ----
+        vscode.commands.registerCommand('todoistTasks.searchTasks', async () => {
+            const current = treeProvider.getSearchQuery();
+            const query = await vscode.window.showInputBox({
+                prompt: 'Search tasks by name',
+                placeHolder: 'Type to filter tasks…',
+                value: current,
+                ignoreFocusOut: false,
+            });
+            if (query === undefined) { return; } // cancelled
+            treeProvider.setSearchQuery(query);
+            if (query.trim()) {
+                treeProvider.setFilter({ showCompleted: false });
+            }
+        }),
+
         // ---- Create Task ----
         vscode.commands.registerCommand('todoistTasks.createTask', async (argOrItem?: string | { collection?: { id: string }; task?: { uid: string } }) => {
             const collections = service.getCollections();
@@ -345,6 +361,8 @@ export function activate(context: vscode.ExtensionContext): void {
         vscode.commands.registerCommand('todoistTasks.filterByTag', async () => {
             const tags = await service.getAllTags();
             const CREATE = '__create__';
+            const RENAME = '__rename__';
+            const DELETE = '__delete__';
             type TagPickItem = vscode.QuickPickItem & { tag: string };
             const items: TagPickItem[] = [
                 {
@@ -352,20 +370,26 @@ export function activate(context: vscode.ExtensionContext): void {
                     tag: CREATE,
                     alwaysShow: true,
                 } as TagPickItem,
+                ...(tags.length > 0 ? [
+                    { label: '$(edit) Rename label…', tag: RENAME, alwaysShow: true } as TagPickItem,
+                    { label: '$(trash) Delete label…', tag: DELETE, alwaysShow: true } as TagPickItem,
+                ] : []),
                 ...tags.map(tag => ({ label: `$(tag) ${tag}`, tag })),
             ];
 
             const picks = await vscode.window.showQuickPick(items, {
                 placeHolder: tags.length === 0
                     ? 'No labels yet — create one to get started'
-                    : 'Select labels to filter by, or create a new label',
+                    : 'Select labels to filter by, or manage labels',
                 canPickMany: true,
                 ignoreFocusOut: true,
             });
             if (!picks) { return; }
 
             const wantsCreate = picks.some(p => p.tag === CREATE);
-            const selected = picks.filter(p => p.tag !== CREATE).map(p => p.tag);
+            const wantsRename = picks.some(p => p.tag === RENAME);
+            const wantsDelete = picks.some(p => p.tag === DELETE);
+            const selected = picks.filter(p => p.tag !== CREATE && p.tag !== RENAME && p.tag !== DELETE).map(p => p.tag);
 
             if (wantsCreate) {
                 const name = await vscode.window.showInputBox({
@@ -383,10 +407,106 @@ export function activate(context: vscode.ExtensionContext): void {
                 }
             }
 
+            if (wantsRename) {
+                const labelPick = await vscode.window.showQuickPick(
+                    tags.map(t => ({ label: `$(tag) ${t}`, tag: t })),
+                    { placeHolder: 'Select label to rename', ignoreFocusOut: true }
+                );
+                if (labelPick) {
+                    const newName = await vscode.window.showInputBox({
+                        title: `Rename "${labelPick.tag}"`,
+                        value: labelPick.tag,
+                        prompt: 'Enter the new label name',
+                        ignoreFocusOut: true,
+                    });
+                    if (newName?.trim() && newName.trim() !== labelPick.tag) {
+                        try {
+                            await service.renameLabel(labelPick.tag, newName.trim());
+                            vscode.window.showInformationMessage(`Label renamed to "${newName.trim()}".`);
+                        } catch (e: unknown) {
+                            vscode.window.showErrorMessage(`Failed to rename label: ${(e as Error).message}`);
+                        }
+                    }
+                }
+            }
+
+            if (wantsDelete) {
+                const labelPick = await vscode.window.showQuickPick(
+                    tags.map(t => ({ label: `$(tag) ${t}`, tag: t })),
+                    { placeHolder: 'Select label to delete', ignoreFocusOut: true }
+                );
+                if (labelPick) {
+                    const confirm = await vscode.window.showWarningMessage(
+                        `Delete label "${labelPick.tag}"? This removes it from all tasks.`,
+                        { modal: true }, 'Delete'
+                    );
+                    if (confirm === 'Delete') {
+                        try {
+                            await service.deleteLabel(labelPick.tag);
+                            vscode.window.showInformationMessage(`Label "${labelPick.tag}" deleted.`);
+                        } catch (e: unknown) {
+                            vscode.window.showErrorMessage(`Failed to delete label: ${(e as Error).message}`);
+                        }
+                    }
+                }
+            }
+
             if (selected.length === 0) {
                 treeProvider.clearFilters();
             } else {
                 treeProvider.setFilter({ tags: selected });
+            }
+        }),
+
+        // ---- Manage Labels on a task (inline, no full form) ----
+        vscode.commands.registerCommand('todoistTasks.manageLabels', async (uidOrItem?: string | { task?: { uid: string } }) => {
+            const uid = resolveUid(uidOrItem);
+            if (!uid) { return; }
+            const task = service.getTask(uid);
+            if (!task) { return; }
+
+            const allTags = await service.getAllTags();
+            type TagItem = vscode.QuickPickItem & { value: string };
+            const tagItems: TagItem[] = allTags.map(t => ({
+                label: `$(tag) ${t}`,
+                value: t,
+                picked: task.tags.includes(t),
+            }));
+
+            const picks = await vscode.window.showQuickPick(tagItems, {
+                title: `Labels — ${task.title}`,
+                placeHolder: allTags.length === 0
+                    ? 'No labels yet — create one with the $(tag) toolbar button'
+                    : 'Space to toggle labels, Enter to confirm',
+                canPickMany: true,
+                ignoreFocusOut: true,
+            });
+            if (picks === undefined) { return; }
+            await service.updateTaskLabels(uid, picks.map(p => p.value), 'replace');
+        }),
+
+        // ---- Delete Label ----
+        vscode.commands.registerCommand('todoistTasks.deleteLabel', async () => {
+            const tags = await service.getAllTags();
+            if (tags.length === 0) {
+                vscode.window.showInformationMessage('No labels to delete.');
+                return;
+            }
+            const pick = await vscode.window.showQuickPick(
+                tags.map(t => ({ label: `$(tag) ${t}`, tag: t })),
+                { placeHolder: 'Select a label to delete', ignoreFocusOut: true }
+            );
+            if (!pick) { return; }
+            const confirm = await vscode.window.showWarningMessage(
+                `Delete label "${pick.tag}"? This removes it from all tasks.`,
+                { modal: true }, 'Delete'
+            );
+            if (confirm !== 'Delete') { return; }
+            try {
+                await service.deleteLabel(pick.tag);
+                vscode.window.showInformationMessage(`Label "${pick.tag}" deleted.`);
+            } catch (e: unknown) {
+                vscode.window.showErrorMessage(`Failed: ${(e as Error).message}`);
             }
         }),
     );

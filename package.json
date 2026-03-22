@@ -69,8 +69,18 @@
       },
       {
         "command": "todoistTasks.filterByTag",
-        "title": "Todoist: Filter by Label",
+        "title": "Todoist: Filter by Tag",
         "icon": "$(tag)"
+      },
+      {
+        "command": "todoistTasks.manageLabels",
+        "title": "Todoist: Manage Labels",
+        "icon": "$(tag)"
+      },
+      {
+        "command": "todoistTasks.deleteLabel",
+        "title": "Todoist: Delete Label",
+        "icon": "$(trash)"
       },
       {
         "command": "todoistTasks.editTask",
@@ -101,6 +111,12 @@
         "command": "todoistTasks.deleteTask",
         "title": "Todoist: Delete Task",
         "icon": "$(trash)"
+      },
+      {
+        "command": "todoistTasks.searchTasks",
+        "title": "Search Tasks",
+        "icon": "$(search)",
+        "category": "Todoist"
       }
     ],
     "viewsContainers": {
@@ -144,6 +160,11 @@
         },
         {
           "command": "todoistTasks.filterTasks",
+          "when": "view == todoistTasksTree",
+          "group": "navigation"
+        },
+        {
+          "command": "todoistTasks.searchTasks",
           "when": "view == todoistTasksTree",
           "group": "navigation"
         },
@@ -193,6 +214,11 @@
           "command": "todoistTasks.editTask",
           "when": "view == todoistTasksTree && (viewItem == task || viewItem == completedTask)",
           "group": "1_task@1"
+        },
+        {
+          "command": "todoistTasks.manageLabels",
+          "when": "view == todoistTasksTree && (viewItem == task || viewItem == completedTask)",
+          "group": "1_task@3"
         },
         {
           "command": "todoistTasks.toggleComplete",
@@ -273,12 +299,36 @@
         "inputSchema": {
           "type": "object",
           "properties": {
-            "project":           { "type": "string",  "description": "Filter by project name (partial, case-insensitive)" },
-            "priority":          { "type": "string",  "enum": ["none","low","medium","high"], "description": "Filter by priority" },
-            "label":             { "type": "string",  "description": "Filter by label name" },
-            "due_before":        { "type": "string",  "description": "Only tasks due on or before this date (YYYY-MM-DD)" },
-            "include_completed": { "type": "boolean", "description": "Include completed tasks (default false)" },
-            "limit":             { "type": "number",  "description": "Max results to return (default 50)" }
+            "project": {
+              "type": "string",
+              "description": "Filter by project name (partial, case-insensitive)"
+            },
+            "priority": {
+              "type": "string",
+              "enum": [
+                "none",
+                "low",
+                "medium",
+                "high"
+              ],
+              "description": "Filter by priority"
+            },
+            "label": {
+              "type": "string",
+              "description": "Filter by label name"
+            },
+            "due_before": {
+              "type": "string",
+              "description": "Only tasks due on or before this date (YYYY-MM-DD)"
+            },
+            "include_completed": {
+              "type": "boolean",
+              "description": "Include completed tasks (default false)"
+            },
+            "limit": {
+              "type": "number",
+              "description": "Max results to return (default 50)"
+            }
           }
         }
       },
@@ -291,14 +341,40 @@
         "modelDescription": "Creates a new task in Todoist. Requires a title. Optionally set project (partial name match), due_date (YYYY-MM-DD), priority (none/low/medium/high), comma-separated labels, and description.",
         "inputSchema": {
           "type": "object",
-          "required": ["title"],
+          "required": [
+            "title"
+          ],
           "properties": {
-            "title":       { "type": "string", "description": "Task title (required)" },
-            "project":     { "type": "string", "description": "Project name (partial match). Uses first project if omitted." },
-            "due_date":    { "type": "string", "description": "Due date as YYYY-MM-DD" },
-            "priority":    { "type": "string", "enum": ["none","low","medium","high"], "description": "Task priority" },
-            "labels":      { "type": "string", "description": "Comma-separated label names" },
-            "description": { "type": "string", "description": "Optional task description" }
+            "title": {
+              "type": "string",
+              "description": "Task title (required)"
+            },
+            "project": {
+              "type": "string",
+              "description": "Project name (partial match). Uses first project if omitted."
+            },
+            "due_date": {
+              "type": "string",
+              "description": "Due date as YYYY-MM-DD"
+            },
+            "priority": {
+              "type": "string",
+              "enum": [
+                "none",
+                "low",
+                "medium",
+                "high"
+              ],
+              "description": "Task priority"
+            },
+            "labels": {
+              "type": "string",
+              "description": "Comma-separated label names"
+            },
+            "description": {
+              "type": "string",
+              "description": "Optional task description"
+            }
           }
         }
       },
@@ -311,14 +387,40 @@
         "modelDescription": "Updates fields on an existing Todoist task. Requires the task_id from todoist_list_tasks. All other fields are optional — only provided fields are changed. Pass due_date as empty string to clear the due date. Pass labels as empty string to clear labels.",
         "inputSchema": {
           "type": "object",
-          "required": ["task_id"],
+          "required": [
+            "task_id"
+          ],
           "properties": {
-            "task_id":     { "type": "string", "description": "Task ID from todoist_list_tasks" },
-            "title":       { "type": "string", "description": "New title" },
-            "due_date":    { "type": "string", "description": "New due date (YYYY-MM-DD), or empty string to clear" },
-            "priority":    { "type": "string", "enum": ["none","low","medium","high"], "description": "New priority" },
-            "labels":      { "type": "string", "description": "Comma-separated labels (replaces existing). Empty string to clear." },
-            "description": { "type": "string", "description": "New description" }
+            "task_id": {
+              "type": "string",
+              "description": "Task ID from todoist_list_tasks"
+            },
+            "title": {
+              "type": "string",
+              "description": "New title"
+            },
+            "due_date": {
+              "type": "string",
+              "description": "New due date (YYYY-MM-DD), or empty string to clear"
+            },
+            "priority": {
+              "type": "string",
+              "enum": [
+                "none",
+                "low",
+                "medium",
+                "high"
+              ],
+              "description": "New priority"
+            },
+            "labels": {
+              "type": "string",
+              "description": "Comma-separated labels (replaces existing). Empty string to clear."
+            },
+            "description": {
+              "type": "string",
+              "description": "New description"
+            }
           }
         }
       },
@@ -331,10 +433,18 @@
         "modelDescription": "Marks a Todoist task as complete. Requires the task_id from todoist_list_tasks. Optionally also completes all subtasks.",
         "inputSchema": {
           "type": "object",
-          "required": ["task_id"],
+          "required": [
+            "task_id"
+          ],
           "properties": {
-            "task_id":          { "type": "string",  "description": "Task ID from todoist_list_tasks" },
-            "include_subtasks": { "type": "boolean", "description": "Also complete all subtasks (default false)" }
+            "task_id": {
+              "type": "string",
+              "description": "Task ID from todoist_list_tasks"
+            },
+            "include_subtasks": {
+              "type": "boolean",
+              "description": "Also complete all subtasks (default false)"
+            }
           }
         }
       },
@@ -347,9 +457,14 @@
         "modelDescription": "Permanently deletes a Todoist task. Requires the task_id from todoist_list_tasks. This action cannot be undone — always confirm with the user before calling this.",
         "inputSchema": {
           "type": "object",
-          "required": ["task_id"],
+          "required": [
+            "task_id"
+          ],
           "properties": {
-            "task_id": { "type": "string", "description": "Task ID from todoist_list_tasks" }
+            "task_id": {
+              "type": "string",
+              "description": "Task ID from todoist_list_tasks"
+            }
           }
         }
       }

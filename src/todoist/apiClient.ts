@@ -126,6 +126,18 @@ export class TodoistApiClient {
         return this._post<TodoistLabel>('/labels', { name });
     }
 
+    async deleteLabel(id: string): Promise<void> {
+        await this._delete(`/labels/${id}`);
+    }
+
+    async updateLabel(id: string, params: { name?: string; color?: string; is_favorite?: boolean }): Promise<TodoistLabel> {
+        return this._post<TodoistLabel>(`/labels/${id}`, params);
+    }
+
+    async getPersonalLabels(): Promise<TodoistLabel[]> {
+        return this._getAllPages<TodoistLabel>('/labels');
+    }
+
     // -------------------------------------------------------------------------
     // HTTP helpers
     // -------------------------------------------------------------------------

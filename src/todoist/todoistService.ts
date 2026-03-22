@@ -202,6 +202,10 @@ export class TodoistService implements vscode.Disposable {
             if (filter.tags && filter.tags.length > 0) {
                 tasks = tasks.filter(t => filter.tags!.some(tag => t.tags.includes(tag)));
             }
+            if (filter.searchQuery) {
+                const q = filter.searchQuery.toLowerCase();
+                tasks = tasks.filter(t => t.title.toLowerCase().includes(q));
+            }
         } else {
             // No filter passed → hide completed by default
             tasks = tasks.filter(t => !t.completed);
@@ -241,6 +245,61 @@ export class TodoistService implements vscode.Disposable {
         if (!this.client) { throw new Error('Todoist: not initialised'); }
         const label = await this.client.createLabel(name);
         return label.name;
+    }
+
+    async deleteLabel(name: string): Promise<void> {
+        if (!this.client) { throw new Error('Todoist: not initialised'); }
+        // Find the label id by name
+        const labels = await this.client.getPersonalLabels();
+        const found = labels.find(l => l.name === name);
+        if (!found) { throw new Error(`Label "${name}" not found`); }
+        await this.client.deleteLabel(found.id);
+    }
+
+    async renameLabel(oldName: string, newName: string): Promise<void> {
+        if (!this.client) { throw new Error('Todoist: not initialised'); }
+        const labels = await this.client.getPersonalLabels();
+        const found = labels.find(l => l.name === oldName);
+        if (!found) { throw new Error(`Label "${oldName}" not found`); }
+        await this.client.updateLabel(found.id, { name: newName });
+        // Update cached tasks that use the old label name
+        this.store.tasks.forEach(t => {
+            if (t.labels) {
+                const idx = t.labels.indexOf(oldName);
+                if (idx !== -1) { t.labels[idx] = newName; }
+            }
+        });
+        this._onDidChange.fire();
+    }
+
+    /**
+     * Update the labels on a task.
+     * mode 'replace' — set labels to exactly the given list (default)
+     * mode 'add'     — add labels to existing set
+     * mode 'remove'  — remove labels from existing set
+     */
+    async updateTaskLabels(
+        uid: string,
+        labels: string[],
+        mode: 'replace' | 'add' | 'remove' = 'replace'
+    ): Promise<void> {
+        if (!this.client) { throw new Error('Todoist: not initialised'); }
+        const task = this.getTask(uid);
+        if (!task) { throw new Error(`Task "${uid}" not found`); }
+
+        let newLabels: string[];
+        if (mode === 'add') {
+            newLabels = [...new Set([...task.tags, ...labels])];
+        } else if (mode === 'remove') {
+            newLabels = task.tags.filter(t => !labels.includes(t));
+        } else {
+            newLabels = labels;
+        }
+
+        const updated = await this.client.updateTask(uid, { labels: newLabels });
+        const idx = this.store.tasks.findIndex(t => t.id === uid);
+        if (idx !== -1) { this.store.tasks[idx] = updated; }
+        this._onDidChange.fire();
     }
 
     // -------------------------------------------------------------------------

@@ -6,9 +6,12 @@ import { Task, Collection, TaskFilter, TaskSort } from '../todoist/types';
 // Tree item types
 // ---------------------------------------------------------------------------
 
-type NodeKind = 'collection' | 'task' | 'subtask' | 'completed-group';
+type NodeKind = 'collection' | 'subproject' | 'task' | 'subtask' | 'completed-group';
 
 class TaskTreeItem extends vscode.TreeItem {
+    /** Exposed so context-menu commands can recover the task uid from the serialized tree item. */
+    public readonly uid?: string;
+
     constructor(
         public readonly kind: NodeKind,
         label: string,
@@ -17,6 +20,7 @@ class TaskTreeItem extends vscode.TreeItem {
         public readonly collection?: Collection,
     ) {
         super(label, collapsible);
+        this.uid = task?.uid;
         this._applyStyle();
     }
 
@@ -24,6 +28,11 @@ class TaskTreeItem extends vscode.TreeItem {
         switch (this.kind) {
             case 'collection':
                 this.iconPath = new vscode.ThemeIcon('list-unordered');
+                this.contextValue = 'collection';
+                break;
+
+            case 'subproject':
+                this.iconPath = new vscode.ThemeIcon('folder');
                 this.contextValue = 'collection';
                 break;
 
@@ -71,6 +80,7 @@ export class TaskTreeProvider
 
     private filter: TaskFilter = { showCompleted: false };
     private sort: TaskSort = { by: 'dueDate', order: 'asc' };
+    private searchQuery = '';
     private readonly disposables: vscode.Disposable[] = [];
 
     constructor(private readonly service: TodoistService) {
@@ -94,7 +104,17 @@ export class TaskTreeProvider
 
     clearFilters(): void {
         this.filter = { showCompleted: false };
+        this.searchQuery = '';
         this.refresh();
+    }
+
+    setSearchQuery(query: string): void {
+        this.searchQuery = query.trim();
+        this.refresh();
+    }
+
+    getSearchQuery(): string {
+        return this.searchQuery;
     }
 
     setSort(sort: TaskSort): void {
@@ -112,11 +132,14 @@ export class TaskTreeProvider
 
     getChildren(element?: TaskTreeItem): TaskTreeItem[] {
         if (!element) {
+            if (this.searchQuery) {
+                return this._searchResultNodes();
+            }
             return this._collectionNodes();
         }
 
-        if (element.kind === 'collection') {
-            return this._taskNodesForCollection(element.collection!.id);
+        if (element.kind === 'collection' || element.kind === 'subproject') {
+            return this._subprojectAndTaskNodes(element.collection!.id);
         }
 
         if (element.kind === 'task' && element.task) {
@@ -208,8 +231,34 @@ export class TaskTreeProvider
     // Node builders
     // -------------------------------------------------------------------------
 
+    private _searchResultNodes(): TaskTreeItem[] {
+        const q = this.searchQuery.toLowerCase();
+        const allTasks = this.service.getTasks(
+            { showCompleted: this.filter.showCompleted },
+            this.sort
+        );
+        return allTasks
+            .filter(t => t.title.toLowerCase().includes(q))
+            .map(t => {
+                // Show project name as description for context
+                const project = this.service.getCollections().find(c => c.id === t.collectionId);
+                const item = new TaskTreeItem(
+                    t.parentUid ? 'subtask' : 'task',
+                    t.title,
+                    vscode.TreeItemCollapsibleState.None,
+                    t,
+                );
+                if (project) {
+                    item.description = `${project.name}${t.dueDate ? '  ·  ' + formatDate(t.dueDate) : ''}`;
+                }
+                return item;
+            });
+    }
+
     private _collectionNodes(): TaskTreeItem[] {
+        // Only top-level projects (no parent) at the root
         return this.service.getCollections()
+            .filter(c => !c.parentId)
             .map(c => new TaskTreeItem(
                 'collection',
                 c.name,
@@ -217,6 +266,24 @@ export class TaskTreeProvider
                 undefined,
                 c,
             ));
+    }
+
+    /** Children of a project/sub-project: sub-projects first, then tasks. */
+    private _subprojectAndTaskNodes(collectionId: string): TaskTreeItem[] {
+        const subprojects = this.service.getCollections()
+            .filter(c => c.parentId === collectionId);
+
+        const subprojectNodes: TaskTreeItem[] = subprojects.map(c =>
+            new TaskTreeItem(
+                'subproject',
+                c.name,
+                vscode.TreeItemCollapsibleState.Collapsed,
+                undefined,
+                c,
+            )
+        );
+
+        return [...subprojectNodes, ...this._taskNodesForCollection(collectionId)];
     }
 
     private _taskNodesForCollection(collectionId: string): TaskTreeItem[] {
