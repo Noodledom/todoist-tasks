@@ -58,6 +58,7 @@ export class TodoistApiClient {
         priority?: number;
         due_date?: string;
         due_datetime?: string;
+        due_string?: string;
         labels?: string[];
     }): Promise<TodoistTask> {
         return this._post<TodoistTask>('/tasks', params);

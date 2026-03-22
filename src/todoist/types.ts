@@ -12,7 +12,10 @@ export interface Task {
     collectionId: string;
     title: string;
     description?: string;
-    dueDate?: string;        // ISO date string (YYYY-MM-DD or full ISO)
+    dueDate?: string;        // ISO date string (YYYY-MM-DD)
+    dueTime?: string;        // HH:MM (24h) when a specific time is set
+    dueString?: string;      // Raw Todoist natural-language due string (e.g. "every Monday at 9am")
+    isRecurring?: boolean;   // true when the task recurs
     priority: Priority;
     tags: string[];          // Todoist labels
     completed: boolean;

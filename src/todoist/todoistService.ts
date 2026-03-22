@@ -46,7 +46,12 @@ function localPriorityToTodoist(p: Priority): number {
 // ---------------------------------------------------------------------------
 
 function mapTask(raw: TodoistTask): Task {
-    const dueDate = raw.due?.datetime?.slice(0, 10) ?? raw.due?.date;
+    // Prefer datetime (has time component) over date-only
+    const rawDatetime = raw.due?.datetime;   // e.g. "2026-04-07T09:00:00"
+    const rawDate     = raw.due?.date;       // e.g. "2026-04-07"
+    const dueDate = rawDatetime?.slice(0, 10) ?? rawDate ?? undefined;
+    // Extract HH:MM from datetime if present
+    const dueTime = rawDatetime ? rawDatetime.slice(11, 16) : undefined;
     return {
         uid: raw.id,
         collectionId: raw.project_id,
@@ -54,6 +59,9 @@ function mapTask(raw: TodoistTask): Task {
         description: raw.description || undefined,
         priority: todoistPriorityToLocal(raw.priority),
         dueDate: dueDate || undefined,
+        dueTime: dueTime || undefined,
+        dueString: raw.due?.string || undefined,
+        isRecurring: raw.due?.is_recurring ?? false,
         createdAt: raw.added_at,
         completed: raw.checked,
         tags: raw.labels ?? [],
@@ -306,6 +314,41 @@ export class TodoistService implements vscode.Disposable {
     // Tasks — write
     // -------------------------------------------------------------------------
 
+    /**
+     * Ask Todoist to parse a natural-language due string and return the resolved
+     * date/time back. Creates and immediately deletes a temporary task in the
+     * Inbox. Returns undefined if the string is not recognised.
+     */
+    async parseDueString(dueString: string): Promise<{ date: string; datetime?: string; isRecurring: boolean; string: string } | undefined> {
+        if (!this.client) { return undefined; }
+        // Use Inbox project (first project whose inbox_project flag is set, or first project)
+        const inboxProject = this.store.projects.find(p => (p as { inbox_project?: boolean }).inbox_project)
+            ?? this.store.projects[0];
+        if (!inboxProject) { return undefined; }
+        let tempTask: TodoistTask | undefined;
+        try {
+            tempTask = await this.client.createTask({
+                content: '__due_parse_preview__',
+                project_id: inboxProject.id,
+                due_string: dueString,
+            });
+            const due = tempTask.due;
+            if (!due) { return undefined; }
+            return {
+                date: due.date,
+                datetime: due.datetime,
+                isRecurring: due.is_recurring,
+                string: due.string ?? dueString,
+            };
+        } catch {
+            return undefined;
+        } finally {
+            if (tempTask?.id) {
+                try { await this.client.deleteTask(tempTask.id); } catch { /* best effort */ }
+            }
+        }
+    }
+
     async createTask(partial: Partial<Task> & { collectionId: string; title: string }): Promise<Task> {
         if (!this.client) { throw new Error('Todoist: not initialised'); }
 
@@ -315,7 +358,12 @@ export class TodoistService implements vscode.Disposable {
             project_id: partial.collectionId,
             parent_id: partial.parentUid,
             priority: localPriorityToTodoist(partial.priority ?? 'none'),
-            due_date: partial.dueDate,
+            // Prefer natural-language due_string (supports recurrence + time)
+            ...(partial.dueString
+                ? { due_string: partial.dueString }
+                : partial.dueDate
+                    ? { due_date: partial.dueDate }
+                    : {}),
             labels: partial.tags,
         });
 
@@ -327,11 +375,16 @@ export class TodoistService implements vscode.Disposable {
     async updateTask(task: Task): Promise<void> {
         if (!this.client) { throw new Error('Todoist: not initialised'); }
 
-        // In API v1, passing due_date as a non-null string sets the date;
-        // to clear a due date pass due_string: 'no date'.
-        const dueParams: { due_date?: string; due_string?: string } = task.dueDate
-            ? { due_date: task.dueDate }
-            : { due_string: 'no date' };
+        // Build due params: prefer natural-language due_string (supports recurrence + time).
+        // Passing due_string: 'no date' clears the due date.
+        let dueParams: { due_string?: string; due_date?: string };
+        if (task.dueString) {
+            dueParams = { due_string: task.dueString };
+        } else if (task.dueDate) {
+            dueParams = { due_date: task.dueDate };
+        } else {
+            dueParams = { due_string: 'no date' };
+        }
 
         const updated = await this.client.updateTask(task.uid, {
             content: task.title,

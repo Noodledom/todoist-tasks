@@ -48,7 +48,7 @@ class TaskTreeItem extends vscode.TreeItem {
                     ? new vscode.ThemeIcon('pass-filled', new vscode.ThemeColor('charts.green'))
                     : priorityIcon(t.priority);
                 this.description = t.dueDate
-                    ? formatDate(t.dueDate)
+                    ? (t.isRecurring ? `↻ ${formatDate(t.dueDate)}` : formatDate(t.dueDate))
                     : undefined;
                 this.tooltip = buildTooltip(t);
                 // contextValue drives which inline buttons / menu items appear
@@ -390,7 +390,8 @@ function formatDate(iso: string): string {
 function buildTooltip(t: Task): vscode.MarkdownString {
     const md = new vscode.MarkdownString();
     md.appendMarkdown(`**${t.title}**\n\n`);
-    if (t.dueDate)     { md.appendMarkdown(`📅 Due: ${formatDate(t.dueDate)}\n\n`); }
+    if (t.dueDate)     { md.appendMarkdown(`📅 Due: ${formatDate(t.dueDate)}${t.dueTime ? ` at ${t.dueTime}` : ''}\n\n`); }
+    if (t.isRecurring && t.dueString) { md.appendMarkdown(`↻ Repeats: ${t.dueString}\n\n`); }
     if (t.priority !== 'none') { md.appendMarkdown(`⚡ Priority: ${t.priority}\n\n`); }
     if (t.tags.length) { md.appendMarkdown(`🏷️ ${t.tags.join(', ')}\n\n`); }
     if (t.description) { md.appendMarkdown(`${t.description}`); }

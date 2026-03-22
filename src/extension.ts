@@ -537,7 +537,7 @@ async function initOrPrompt(service: TodoistService, context: vscode.ExtensionCo
 // Multi-step QuickPick form (Option B)
 // ---------------------------------------------------------------------------
 
-type TaskDraft = Pick<Task, 'uid' | 'collectionId' | 'title' | 'description' | 'dueDate' | 'priority' | 'tags' | 'completed' | 'parentUid'>;
+type TaskDraft = Pick<Task, 'uid' | 'collectionId' | 'title' | 'description' | 'dueDate' | 'dueString' | 'isRecurring' | 'priority' | 'tags' | 'completed' | 'parentUid'>;
 
 async function showTaskForm(task: Task, mode: 'create' | 'edit', service: TodoistService): Promise<Task | undefined> {
     // Mutable working copy
@@ -547,6 +547,8 @@ async function showTaskForm(task: Task, mode: 'create' | 'edit', service: Todois
         title: task.title,
         description: task.description,
         dueDate: task.dueDate,
+        dueString: task.dueString,
+        isRecurring: task.isRecurring,
         priority: task.priority,
         tags: [...task.tags],
         completed: task.completed,
@@ -567,7 +569,7 @@ async function showTaskForm(task: Task, mode: 'create' | 'edit', service: Todois
             },
             {
                 label: `$(calendar) Due date`,
-                description: draft.dueDate ? draft.dueDate.slice(0, 10) : '(none)',
+                description: dueDateDisplay(draft),
                 action: 'dueDate',
             },
             {
@@ -624,32 +626,10 @@ async function showTaskForm(task: Task, mode: 'create' | 'edit', service: Todois
         }
 
         else if (pick.action === 'dueDate') {
-            const shortcuts: (vscode.QuickPickItem & { value: string })[] = [
-                { label: '$(remove) No date', value: '' },
-                { label: '$(calendar) Today',    value: todayPlus(0) },
-                { label: '$(calendar) Tomorrow', value: todayPlus(1) },
-                { label: '$(calendar) In 3 days',  value: todayPlus(3) },
-                { label: '$(calendar) Next week',  value: todayPlus(7) },
-                { label: '$(edit) Custom date…',   value: '__custom__' },
-            ];
-            const datePick = await vscode.window.showQuickPick(shortcuts, {
-                title: 'Due date',
-                placeHolder: draft.dueDate ? `Current: ${draft.dueDate.slice(0, 10)}` : 'Select a date',
-                ignoreFocusOut: true,
-            });
-            if (datePick !== undefined) {
-                if (datePick.value === '__custom__') {
-                    const custom = await vscode.window.showInputBox({
-                        title: 'Custom due date',
-                        prompt: 'Enter date (YYYY-MM-DD)',
-                        value: draft.dueDate?.slice(0, 10) ?? '',
-                        ignoreFocusOut: true,
-                        validateInput: v => /^\d{4}-\d{2}-\d{2}$/.test(v) || v === '' ? null : 'Use YYYY-MM-DD format',
-                    });
-                    if (custom !== undefined) { draft.dueDate = custom || undefined; }
-                } else {
-                    draft.dueDate = datePick.value || undefined;
-                }
+            const result = await pickDueString(draft.dueString ?? draft.dueDate ?? '', service);
+            if (result !== null) {          // null = cancelled
+                draft.dueString = result || undefined;
+                draft.dueDate   = undefined;
             }
         }
 
@@ -702,9 +682,156 @@ async function showTaskForm(task: Task, mode: 'create' | 'edit', service: Todois
     }
 }
 
+
 /** Returns a YYYY-MM-DD string for today + offsetDays */
 function todayPlus(offsetDays: number): string {
     const d = new Date();
     d.setDate(d.getDate() + offsetDays);
     return d.toISOString().slice(0, 10);
 }
+
+/** Human-readable due date summary shown in the task form field row. */
+function dueDateDisplay(draft: { dueString?: string; dueDate?: string; isRecurring?: boolean }): string {
+    if (draft.dueString) {
+        return draft.isRecurring ? `↻ ${draft.dueString}` : draft.dueString;
+    }
+    if (draft.dueDate) {
+        return draft.dueDate.slice(0, 10);
+    }
+    return '(none)';
+}
+
+// ---------------------------------------------------------------------------
+// Due-date picker with live autocomplete + Todoist validation
+// ---------------------------------------------------------------------------
+
+const DUE_SUGGESTIONS: Array<{ label: string; value: string; isRecurring?: boolean }> = [
+    // ── One-time ──────────────────────────────────────────────────────────
+    { label: '$(remove) No date',           value: '' },
+    { label: '$(calendar) Today',           value: 'today' },
+    { label: '$(calendar) Tomorrow',        value: 'tomorrow' },
+    { label: '$(calendar) Next week',       value: 'next week' },
+    { label: '$(calendar) Next Monday',     value: 'next Monday' },
+    { label: '$(calendar) Next weekend',    value: 'next weekend' },
+    // ── Recurring ─────────────────────────────────────────────────────────
+    { label: '$(sync) Every day',           value: 'every day',           isRecurring: true },
+    { label: '$(sync) Every weekday',       value: 'every weekday',       isRecurring: true },
+    { label: '$(sync) Every Monday',        value: 'every Monday',        isRecurring: true },
+    { label: '$(sync) Every Tuesday',       value: 'every Tuesday',       isRecurring: true },
+    { label: '$(sync) Every Wednesday',     value: 'every Wednesday',     isRecurring: true },
+    { label: '$(sync) Every Thursday',      value: 'every Thursday',      isRecurring: true },
+    { label: '$(sync) Every Friday',        value: 'every Friday',        isRecurring: true },
+    { label: '$(sync) Every week',          value: 'every week',          isRecurring: true },
+    { label: '$(sync) Every 2 weeks',       value: 'every 2 weeks',       isRecurring: true },
+    { label: '$(sync) Every month',         value: 'every month',         isRecurring: true },
+    { label: '$(sync) Every year',          value: 'every year',          isRecurring: true },
+    { label: '$(sync) Every first Monday of the month', value: 'every first Monday of the month', isRecurring: true },
+    { label: '$(sync) Every last day of the month',     value: 'every last day of the month',     isRecurring: true },
+];
+
+/**
+ * Show a live QuickPick for due date / recurrence.
+ * - Filters suggestions by what the user types.
+ * - After a 600 ms pause, validates the typed string against Todoist and shows
+ *   the resolved date as detail text.
+ * Returns the chosen due string (empty string = clear), or null if cancelled.
+ */
+async function pickDueString(current: string, service: TodoistService): Promise<string | null> {
+    return new Promise(resolve => {
+        const qp = vscode.window.createQuickPick<vscode.QuickPickItem & { value: string }>();
+        qp.title = 'Due date / recurrence';
+        qp.placeholder = current
+            ? `Current: ${current}  —  type to change or pick below`
+            : 'Type or pick a due date / recurrence…';
+        qp.value = current;
+        qp.ignoreFocusOut = true;
+        qp.matchOnDescription = true;
+
+        let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+        let previewItem: (vscode.QuickPickItem & { value: string }) | undefined;
+
+        function buildItems(typed: string): Array<vscode.QuickPickItem & { value: string }> {
+            const q = typed.toLowerCase();
+            const filtered = DUE_SUGGESTIONS.filter(s =>
+                !q || s.value.toLowerCase().includes(q) || s.label.toLowerCase().includes(q)
+            );
+
+            const items: Array<vscode.QuickPickItem & { value: string }> = [];
+
+            // If user typed something not exactly matching a suggestion, show it as a custom entry at top
+            const exactMatch = DUE_SUGGESTIONS.some(s => s.value.toLowerCase() === q);
+            if (typed && !exactMatch) {
+                items.push({
+                    label: `$(edit) Use: "${typed}"`,
+                    description: 'validating…',
+                    value: typed,
+                    alwaysShow: true,
+                });
+            }
+
+            items.push(...filtered.map(s => ({
+                label: s.label,
+                value: s.value,
+                description: s.isRecurring ? 'repeating' : undefined,
+            })));
+
+            return items;
+        }
+
+        qp.items = buildItems(current);
+
+        qp.onDidChangeValue(typed => {
+            qp.items = buildItems(typed);
+
+            // Debounce validation
+            if (debounceTimer) { clearTimeout(debounceTimer); }
+            if (!typed) { return; }
+
+            debounceTimer = setTimeout(async () => {
+                // Check if it's a suggestion — no need to validate
+                const isSuggestion = DUE_SUGGESTIONS.some(s => s.value.toLowerCase() === typed.toLowerCase());
+                if (isSuggestion) { return; }
+
+                // Find the custom "Use: ..." item and update its description
+                const parsed = await service.parseDueString(typed);
+                const items = buildItems(typed);
+                const customIdx = items.findIndex(i => i.value === typed && i.label.startsWith('$(edit)'));
+                if (customIdx !== -1) {
+                    if (parsed) {
+                        const dt = parsed.datetime ?? parsed.date;
+                        const friendly = new Date(dt).toLocaleString(undefined, {
+                            weekday: 'short', month: 'short', day: 'numeric',
+                            ...(parsed.datetime ? { hour: '2-digit', minute: '2-digit' } : {}),
+                        });
+                        items[customIdx].description = parsed.isRecurring
+                            ? `↻ repeating — next: ${friendly}`
+                            : `✓ ${friendly}`;
+                    } else {
+                        items[customIdx].description = '⚠ not recognised by Todoist';
+                    }
+                }
+                qp.items = items;
+                previewItem = items[customIdx];
+            }, 600);
+        });
+
+        qp.onDidAccept(() => {
+            const sel = qp.selectedItems[0];
+            qp.dispose();
+            if (sel === undefined) {
+                resolve(null);   // cancelled via Enter with nothing selected
+            } else {
+                resolve(sel.value);
+            }
+        });
+
+        qp.onDidHide(() => {
+            if (debounceTimer) { clearTimeout(debounceTimer); }
+            qp.dispose();
+            resolve(null);
+        });
+
+        qp.show();
+    });
+}
+
